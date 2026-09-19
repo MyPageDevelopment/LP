@@ -2,6 +2,10 @@
 // ARCHIVO: test.dsl
 // TAREA SEMESTRAL: Intérprete de Topologías de Stream Processing
 // CASO DE PRUEBA: Topología con operadores replicados adyacentes
+// SINTAXIS: DSL OFICIAL del Control I (FUENTE/OPERADOR/SUMIDERO/CONECTAR.../
+//           SIMULAR), no la sintaxis legacy en inglés (SOURCE/OPERATOR/SINK/
+//           EMIT/->). Ver Readme.txt sección 5 para la sintaxis legacy de
+//           compatibilidad, que ya no se usa en este archivo de demostración.
 // ==============================================================================
 
 // -----------------------------------------------------------------------------
@@ -9,35 +13,33 @@
 // -----------------------------------------------------------------------------
 
 // Fuente de datos (punto de entrada del flujo)
-SOURCE sensor_iot;
+FUENTE sensor_iot;
 
-// Primer operador replicado: Limpieza y filtrado de datos (2 réplicas)
-OPERATOR filtro_ruido PARALLEL 2;
+// Primer operador replicado: Limpieza y filtrado de datos (2 réplicas,
+// tarda 4 unidades de tiempo en procesar cada tupla)
+OPERADOR filtro_ruido TIEMPO_SERVICIO 4 REPLICAS 2;
 
-// Segundo operador replicado adyacente: Clasificación de anomalías (3 réplicas)
+// Segundo operador replicado adyacente: Clasificación de anomalías (3 réplicas,
+// tarda 6 unidades de tiempo en procesar cada tupla)
 // Este operador recibe datos provenientes de las réplicas del operador anterior
-OPERATOR detector_anomalias PARALLEL 3;
+OPERADOR detector_anomalias TIEMPO_SERVICIO 6 REPLICAS 3;
 
 // Sumidero final: Base de datos o consola donde se almacenan las tuplas procesadas
-SINK consola_alertas;
+SUMIDERO consola_alertas;
 
 // -----------------------------------------------------------------------------
 // 2. CONEXIONES DE LA TOPOLOGÍA (DAG)
-// Permite sintaxis encadenada usando el operador '->'
-// sensor_iot -> filtro_ruido -> detector_anomalias -> consola_alertas;
+// Sintaxis oficial del Control: CONECTAR <id_origen> A <id_destino>;
 // -----------------------------------------------------------------------------
-sensor_iot -> filtro_ruido;
-filtro_ruido -> detector_anomalias;
-detector_anomalias -> consola_alertas;
+CONECTAR sensor_iot A filtro_ruido;
+CONECTAR filtro_ruido A detector_anomalias;
+CONECTAR detector_anomalias A consola_alertas;
 
 // -----------------------------------------------------------------------------
-// 3. EVENTOS A SIMULAR (Inyección de tuplas al flujo)
-// Emitimos 6 eventos para apreciar el ciclo de Round-Robin en las 2 réplicas
-// de 'filtro_ruido' y en las 3 réplicas de 'detector_anomalias'.
+// 3. SIMULACIÓN (Control I: SIMULAR <cantidad_eventos>)
+// Genera automáticamente 6 eventos con contenido sintético, para apreciar el
+// mismo ciclo de Round-Robin en las 2 réplicas de 'filtro_ruido' y en las 3
+// réplicas de 'detector_anomalias'. Cada evento debe acumular exactamente
+// 4 + 6 = 10 unidades de tiempo (TIEMPO_SERVICIO de ambos operadores).
 // -----------------------------------------------------------------------------
-EMIT "LECTURA #1: temp=21.4C, hum=45%" TO sensor_iot;
-EMIT "LECTURA #2: temp=48.9C, hum=80%" TO sensor_iot;
-EMIT "LECTURA #3: temp=22.1C, hum=43%" TO sensor_iot;
-EMIT "LECTURA #4: temp=92.3C, hum=15%" TO sensor_iot;
-EMIT "LECTURA #5: temp=23.0C, hum=50%" TO sensor_iot;
-EMIT "LECTURA #6: temp=88.7C, hum=78%" TO sensor_iot;
+SIMULAR 6;

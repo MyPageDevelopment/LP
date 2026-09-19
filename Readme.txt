@@ -27,8 +27,9 @@ El proyecto se entrega dividido en módulos claros, legibles y comentados:
                   palabras reservadas, literales, comentarios y rastrea los
                   números de línea para un reporte preciso de errores.
   * parser.py   : Analizador sintáctico implementado con PLY (yacc). Define la
-                  gramática BNF del DSL, procesa declaraciones, conexiones
-                  simples y encadenadas, e instrucciones de emisión.
+                  gramática BNF del DSL oficial y legacy (ver sección 5),
+                  procesa declaraciones (incluyendo TIEMPO_SERVICIO), conexiones
+                  simples y encadenadas, instrucciones de emisión y SIMULAR <n>.
   * topology.py : Contiene la lógica del dominio:
                   - Clases de nodos (SourceNode, OperatorNode, SinkNode).
                   - Tabla de símbolos para control de identificadores y duplicados.
@@ -40,8 +41,10 @@ El proyecto se entrega dividido en módulos claros, legibles y comentados:
                   valida la topología y despliega la simulación.
   * Makefile    : Automatizador de tareas con reglas estándar: install, run,
                   clean y test.
-  * test.dsl    : Archivo de prueba con un caso representativo que incluye fuente,
-                  dos operadores adyacentes replicados, sumidero y eventos.
+  * test.dsl    : Archivo de prueba con un caso representativo (sintaxis OFICIAL
+                  del Control, sección 5.1) que incluye una fuente, dos
+                  operadores adyacentes replicados con TIEMPO_SERVICIO, un
+                  sumidero, y SIMULAR para generar los eventos.
   * Readme.txt  : Este documento con instrucciones y justificación de diseño.
 
 
@@ -75,31 +78,206 @@ Para limpiar los archivos temporales y la caché de Python / PLY:
 
 5. SINTAXIS DEL LENGUAJE (DSL)
 --------------------------------------------------------------------------------
-El DSL admite una sintaxis intuitiva y flexible:
+El DSL implementa la sintaxis OFICIAL exigida por el Control I (5.1). También
+conserva, como compatibilidad técnica claramente separada (5.2), el dialecto
+en inglés con el que se construyó originalmente el proyecto. test.dsl (la
+demostración principal) usa únicamente la sintaxis oficial de 5.1.
 
-a) Declaración de Fuentes (SOURCE):
-   SOURCE nombre_fuente;
+5.1 SINTAXIS OFICIAL (Control I)
+--------------------------------------------------------------------------------
 
-b) Declaración de Operadores (OPERATOR):
-   OPERATOR nombre_operador;                 // Asume paralelismo 1 por defecto
-   OPERATOR nombre_operador PARALLEL 3;      // Con 3 réplicas en paralelo
-   OPERATOR nombre_operador [PARALLEL = 3];  // Sintaxis alternativa con corchetes
+a) Declaración de una Fuente:
+   FUENTE nombre_fuente;
 
-c) Declaración de Sumideros (SINK):
-   SINK nombre_sumidero;
+b) Declaración de un Operador (TIEMPO_SERVICIO es OBLIGATORIO):
+   OPERADOR nombre_operador TIEMPO_SERVICIO 5;              // 1 réplica por defecto
+   OPERADOR nombre_operador TIEMPO_SERVICIO 5 REPLICAS 2;   // con réplicas
 
-d) Conexiones del Grafo:
-   fuente -> operador -> sumidero;           // Conexiones encadenadas
-   CONNECT fuente -> operador;               // Palabra opcional CONNECT
+   IMPORTANTE: al usar la palabra OFICIAL "OPERADOR", TIEMPO_SERVICIO es
+   obligatorio. "OPERADOR nombre;" o "OPERADOR nombre REPLICAS 2;" (sin
+   TIEMPO_SERVICIO) se RECHAZAN con un error semántico explícito -- el nodo no
+   se registra -- porque el Control exige que todo operador declare su tiempo
+   de servicio. Esta restricción NO aplica a la palabra legacy "OPERATOR"
+   (ver 5.2), que existe solo como compatibilidad técnica.
 
-e) Emisión de Eventos / Tuplas:
-   EMIT "Carga útil del evento" TO nombre_fuente;
+   TIEMPO_SERVICIO durante la simulación: cada vez que una tupla atraviesa un
+   operador, su TIEMPO_SERVICIO se suma EXACTAMENTE UNA VEZ al tiempo total
+   acumulado de ese evento (todas las réplicas de un mismo operador comparten
+   su único TIEMPO_SERVICIO). FUENTE y SUMIDERO no aportan tiempo (el Control
+   solo pide sumar "los tiempos de servicio de los operadores atravesados").
 
-f) Comentarios:
+c) Declaración de un Sumidero:
+   SUMIDERO nombre_sumidero;
+
+d) Conexión entre nodos:
+   CONECTAR id_origen A id_destino;
+
+   Reutiliza exactamente la misma validación de existencia de nodos que el
+   resto del lenguaje (Topologia.conectar). No admite encadenamiento -- el
+   Control especifica únicamente la forma binaria; encadenar conexiones sigue
+   siendo una extensión exclusiva de la sintaxis legacy con '->' (ver 5.2).
+
+e) Simulación automática de eventos:
+   SIMULAR cantidad_eventos;
+
+   Genera automáticamente esa cantidad TOTAL de eventos (no por fuente) con
+   contenido sintético ("tupla_sintetica_N"). El enunciado del Control no
+   especifica qué ocurre con múltiples FUENTEs; decidimos (análogamente a
+   como ya resolvimos el Round-Robin de réplicas) repartir los N eventos de
+   forma circular entre todas las FUENTEs declaradas ANTES de la instrucción
+   SIMULAR en el archivo (las FUENTEs deben declararse antes de usarse, igual
+   que para CONECTAR). Ejemplo: con 2 fuentes y SIMULAR 5, la primera recibe
+   3 eventos y la segunda 2 (orden: fuente1, fuente2, fuente1, fuente2,
+   fuente1).
+
+   Salida por evento (formato literal exigido por el Control): al llegar a un
+   SUMIDERO se imprime, además de la traza detallada existente ([CANAL],
+   [PROCESANDO], [SUMIDERO]):
+       Evento 1: FUENTE f1 -> OPERADOR op1 (T: 5) -> SUMIDERO s1
+       Tiempo total acumulado: 5
+   Si la ruta atraviesa varios operadores, cada uno aparece con su propio
+   "(T: n)" en el orden real recorrido.
+
+f) Punto y coma (";") al final de cada instrucción: el Control NO especifica
+   ningún terminador de instrucción -- ninguno de sus ejemplos de sintaxis
+   muestra ";". Su uso es una DECISIÓN PROPIA del equipo, heredada del diseño
+   original del DSL, no una exigencia del enunciado. Se documenta aquí
+   explícitamente para no atribuir al Control algo que no dice.
+
+g) Comentarios (extensión propia, no exigida por el Control):
    // Comentario de una línea
    # Comentario de una línea estilo script
    /* Comentario
       multilínea en bloque */
+
+5.2 SINTAXIS LEGACY (compatibilidad técnica -- NO es la sintaxis oficial)
+--------------------------------------------------------------------------------
+Dialecto en inglés con el que se construyó originalmente el proyecto,
+conservado únicamente como compatibilidad técnica. NO se usa en test.dsl (la
+demostración principal usa exclusivamente la sintaxis oficial de 5.1).
+
+   SOURCE nombre_fuente;                     // alias legacy de FUENTE
+   OPERATOR nombre_operador;                 // NO exige TIEMPO_SERVICIO (ver nota)
+   OPERATOR nombre_operador PARALLEL 3;
+   OPERATOR nombre_operador [PARALLEL = 3];  // sintaxis alternativa con corchetes
+   SINK nombre_sumidero;                     // alias legacy de SUMIDERO
+   fuente -> operador -> sumidero;           // conexión encadenada con flecha
+   CONNECT fuente -> operador;               // alias legacy de CONECTAR (con '->')
+   EMIT "texto" TO fuente;                   // evento manual, contenido explícito
+   SIMULATE { EMIT "..." TO fuente; }        // bloque agrupador, sin efecto propio
+
+   NOTA (por qué "OPERATOR" sí puede omitir TIEMPO_SERVICIO): la exigencia de
+   TIEMPO_SERVICIO obligatorio está atada específicamente a la palabra OFICIAL
+   "OPERADOR" (así lo pide el Control). La palabra legacy "OPERATOR" puede
+   seguir declarándose sin TIEMPO_SERVICIO por compatibilidad técnica
+   temporal; en ese caso tiempo_servicio queda en None (no se inventa un
+   valor) y el simulador imprime una advertencia visible en cada evento que
+   lo atraviesa -- nunca provoca una excepción.
+
+   NOTA (relación EMIT / SIMULATE{} / SIMULAR): los tres coexisten sobre el
+   mismo motor de simulación (Simulador, Round-Robin, propagación por el
+   grafo). EMIT es un evento manual con contenido elegido por quien escribe
+   el .dsl (útil para pruebas dirigidas); SIMULATE{} solo agrupa sentencias,
+   sin generar eventos por sí solo; SIMULAR <n> (sección 5.1) es la forma
+   oficial que exige el Control y genera contenido sintético automáticamente.
+
+5.3 EXPRESIONES REGULARES (lexer.py)
+--------------------------------------------------------------------------------
+Documentación exigida por el Control ("defina las ER... que sean necesarias").
+Las expresiones regulares reales son las definidas en lexer.py; ninguna otra
+existe en el código:
+
+   IDENT      [a-zA-Z_][a-zA-Z0-9_]*
+              Identificador de nodo (nombre de fuente/operador/sumidero).
+              TODO identificador -- incluidas las palabras clave -- se
+              reconoce PRIMERO por esta misma ER (t_IDENT). Después, el
+              lexer compara el texto (en minúsculas) contra el diccionario
+              `palabras_reservadas` y, si calza, reclasifica el token al
+              tipo correspondiente (por ejemplo 'fuente' o 'source' pasan de
+              IDENT a SOURCE); si no calza con ninguna palabra reservada,
+              el token queda como IDENT.
+
+   NUMBER     \d+
+              Entero sin signo (usado en TIEMPO_SERVICIO, REPLICAS/PARALLEL
+              y SIMULAR/SIMULATE).
+
+   STRING     \"([^\\\n]|(\\.))*?\"
+              Cadena entre comillas dobles, con soporte de caracteres de
+              escape (\"); se usa en EMIT (sintaxis legacy).
+
+   ARROW      ->            SEMICOLON  ;
+   LBRACKET   \[            RBRACKET   \]
+   LBRACE     \{            RBRACE     \}
+   EQUALS     =
+
+   Comentarios (no generan token, se descartan):
+     línea:   (//|\#).*
+     bloque:  /\*(.|\n)*?\*/
+
+   Espacios/tabs/retorno de carro se ignoran (t_ignore = ' \t\r'); los saltos
+   de línea (\n+) solo actualizan el contador de línea para los mensajes de
+   error.
+
+   Palabras reservadas (reclasificadas desde IDENT vía el diccionario
+   palabras_reservadas de lexer.py), vocabulario OFICIAL primero:
+
+     fuente          -> SOURCE            operador        -> OPERATOR
+     tiempo_servicio -> TIEMPO_SERVICIO   replicas        -> PARALLEL
+     sumidero        -> SINK              conectar        -> CONNECT
+     a               -> TO                simular         -> SIMULATE
+
+   Vocabulario LEGACY (sección 5.2), mismos tokens que su contraparte oficial:
+
+     source -> SOURCE   operator -> OPERATOR   sink -> SINK
+     parallel -> PARALLEL   connect -> CONNECT   to -> TO
+     emit -> EMIT   simulate -> SIMULATE
+
+   La comparación es insensible a mayúsculas/minúsculas (se compara
+   t.value.lower() contra el diccionario).
+
+5.4 GRAMÁTICA LIBRE DE CONTEXTO (GLC) OFICIAL (parser.py)
+--------------------------------------------------------------------------------
+Documentación exigida por el Control ("defina... la GLC que sea necesaria").
+Gramática BNF correspondiente EXACTAMENTE a las producciones de parser.py que
+implementan la sintaxis oficial de 5.1 (no se mezcla con las producciones
+legacy de 5.2, que existen aparte en el mismo archivo bajo los mismos
+no-terminales `declaration_stmt` / `connection_stmt` / `simulation_block`):
+
+   programa            -> lista_instrucciones
+
+   lista_instrucciones -> lista_instrucciones instruccion
+                        | instruccion
+                        | ε
+
+   instruccion         -> declaracion_fuente
+                        | declaracion_operador
+                        | declaracion_sumidero
+                        | conexion
+                        | simulacion
+
+   declaracion_fuente  -> FUENTE IDENT ';'
+
+   declaracion_operador -> OPERADOR IDENT TIEMPO_SERVICIO NUMBER ';'
+                         | OPERADOR IDENT TIEMPO_SERVICIO NUMBER REPLICAS NUMBER ';'
+
+   declaracion_sumidero -> SUMIDERO IDENT ';'
+
+   conexion            -> CONECTAR IDENT A IDENT ';'
+
+   simulacion          -> SIMULAR NUMBER ';'
+
+   NOTA sobre el ';': el Control NO especifica ningún terminador de
+   instrucción en sus ejemplos de sintaxis. Su presencia en esta GLC es una
+   DECISIÓN PROPIA del equipo (heredada del diseño original del DSL), no una
+   exigencia del enunciado -- ver también 5.1.f.
+
+   Esta GLC corresponde a las funciones p_declaration_source,
+   p_declaration_operator_tiempo_servicio,
+   p_declaration_operator_tiempo_servicio_parallel, p_declaration_sink,
+   p_connection_conectar_a y p_simulation_run de parser.py. La forma
+   `declaracion_operador` SIN TIEMPO_SERVICIO no forma parte de esta GLC
+   oficial porque el Control la exige siempre (ver 5.1.b); esa forma sin
+   tiempo solo existe en la gramática legacy de 5.2.
 
 
 6. VALIDACIONES SEMÁNTICAS Y ESTRUCTURALES DEL GRAFO
@@ -111,9 +289,17 @@ el grafo represente una topología coherente de Stream Processing:
      - No se permiten identificadores duplicados.
      - No se pueden conectar o emitir tuplas a nodos que no hayan sido declarados.
      - El paralelismo de los operadores debe ser un entero estrictamente mayor a 0.
+     - Si se especifica TIEMPO_SERVICIO, debe ser un entero estrictamente mayor a 0
+       (si no se especifica, el operador queda con tiempo_servicio = None, ver
+       sección 5).
+     - Con la palabra OFICIAL "OPERADOR", TIEMPO_SERVICIO es obligatorio: su
+       ausencia se rechaza como error semántico y el nodo no se registra
+       (ver sección 5.1). Esta exigencia no aplica a la palabra legacy
+       "OPERATOR" (sección 5.2).
 
   2. Estructura de la Topología:
-     - Debe existir al menos una Fuente (SOURCE) y al menos un Sumidero (SINK).
+     - Debe existir al menos una Fuente (FUENTE/SOURCE) y al menos un Sumidero
+       (SUMIDERO/SINK).
      - Fuentes puras: Las fuentes tienen grado de entrada 0 (no pueden recibir
        conexiones de otros nodos).
      - Sumideros puros: Los sumideros tienen grado de salida 0 (no pueden enviar
@@ -198,11 +384,15 @@ Ventajas y Fundamentos de esta Decisión:
      es constante.
 
 En el reporte final generado por nuestro simulador para el caso `test.dsl`, se
-puede observar claramente este comportamiento: las 6 tuplas emitidas por la fuente
-se dividen en partes iguales (3 y 3) entre las 2 réplicas de `filtro_ruido`, y
-luego cada una de esas réplicas reparte sus tuplas de forma independiente entre
-las 3 réplicas de `detector_anomalias`, logrando que cada réplica de este último
-procese exactamente 2 tuplas (33.3% cada una), demostrando el balance perfecto.
+puede observar claramente este comportamiento: las 6 tuplas (generadas ahora
+mediante `SIMULAR 6;` en sintaxis oficial, en vez de 6 EMIT manuales como en
+versiones anteriores de este archivo) se dividen en partes iguales (3 y 3)
+entre las 2 réplicas de `filtro_ruido`, y luego cada una de esas réplicas
+reparte sus tuplas de forma independiente entre las 3 réplicas de
+`detector_anomalias`, logrando que cada réplica de este último procese
+exactamente 2 tuplas (33.3% cada una), demostrando el balance perfecto. El
+mecanismo de Round-Robin en sí (`Simulador.obtener_siguiente_replica`) no
+cambió: solo cambió cómo se generan los eventos que lo ejercitan.
 
 
 8. CONCLUSIONES DEL DESARROLLO
@@ -216,3 +406,16 @@ teóricos de la asignatura:
     y unicidad; algoritmos sobre grafos para validar propiedades de DAG).
   - Sistemas Distribuidos: Modelado de balanceo de carga sin estado compartido
     mediante Round-Robin local por canal.
+
+
+9. USO DE HERRAMIENTAS DE INTELIGENCIA ARTIFICIAL
+--------------------------------------------------------------------------------
+El enunciado original del Control I restringía el uso de IA para la generación
+de código. Posteriormente, el profesor autorizó explícitamente su uso mediante
+comunicación directa al curso (correo).
+
+Se utilizaron herramientas de Inteligencia Artificial durante el desarrollo de
+este proyecto conforme a esa autorización posterior del profesor.
+
+Alcance exacto de la autorización y detalle de uso (herramienta, prompts):
+[COMPLETAR CON EL ALCANCE EXACTO DE LA AUTORIZACIÓN DEL PROFESOR]

@@ -16,14 +16,21 @@ import ply.lex as lex
 # -----------------------------------------------------------------------------
 palabras_reservadas = {
     'source': 'SOURCE',
+    'fuente': 'SOURCE',        # palabra OFICIAL del Control para declarar una fuente
     'operator': 'OPERATOR',
+    'operador': 'OPERATOR',    # palabra OFICIAL del Control para declarar un operador
     'sink': 'SINK',
+    'sumidero': 'SINK',        # palabra OFICIAL del Control para declarar un sumidero
     'parallel': 'PARALLEL',
-    'replicas': 'PARALLEL',    # permitimos 'replicas' como sinónimo de 'parallel'
+    'replicas': 'PARALLEL',    # permitimos 'replicas' como sinónimo de 'parallel' (también es la palabra OFICIAL del Control)
     'connect': 'CONNECT',
+    'conectar': 'CONNECT',     # palabra OFICIAL del Control para declarar una arista
     'to': 'TO',
+    'a': 'TO',                 # 'A' (Control I, en "CONECTAR ... A ...") reutiliza el mismo token que 'TO'
     'emit': 'EMIT',
-    'simulate': 'SIMULATE'
+    'simulate': 'SIMULATE',
+    'simular': 'SIMULATE',     # permitimos 'simular' como sinónimo de 'simulate' (Control I)
+    'tiempo_servicio': 'TIEMPO_SERVICIO',  # atributo de tiempo de procesamiento de un OPERATOR (Control I)
 }
 
 # -----------------------------------------------------------------------------

@@ -42,11 +42,16 @@ class OperatorNode(Nodo):
     Procesa tuplas intermedias. Puede tener múltiples réplicas (paralelismo)
     para procesar eventos en paralelo mediante balanceo de carga Round-Robin.
     """
-    def __init__(self, nombre, paralelismo, linea):
+    def __init__(self, nombre, paralelismo, linea, tiempo_servicio=None):
         super().__init__(nombre, 'OPERATOR', linea)
         # Si el usuario no especificó réplicas, por defecto es 1
         self.paralelismo = paralelismo if paralelismo is not None and paralelismo > 0 else 1
-        
+
+        # Tiempo de servicio (Control I): unidades de tiempo que tarda esta réplica
+        # en procesar una tupla. Queda en None si el operador se declaró con una
+        # sintaxis antigua que todavía no lo especifica (ver Readme.txt, sección 5).
+        self.tiempo_servicio = tiempo_servicio
+
         # Diccionario para llevar la cuenta de cuántas tuplas procesó cada réplica individual
         # Ejemplo: {0: 5, 1: 4} para 2 réplicas
         self.conteo_por_replica = {i: 0 for i in range(self.paralelismo)}
@@ -93,9 +98,13 @@ class TablaSimbolos:
         # Lista de errores semánticos encontrados durante el análisis
         self.errores = []
 
-    def declarar_nodo(self, nombre, tipo, paralelismo, linea):
+    def declarar_nodo(self, nombre, tipo, paralelismo, linea, tiempo_servicio=None):
         """
         Registra un nuevo nodo en la tabla. Si ya existe, añade un error semántico.
+
+        'tiempo_servicio' solo aplica a nodos OPERATOR (Control I). Se deja como
+        parámetro opcional para no romper las llamadas existentes de SOURCE/SINK
+        y de las declaraciones de OPERATOR que todavía no lo especifican.
         """
         # Verificamos si el nombre ya fue usado antes
         if nombre in self.simbolos:
@@ -112,11 +121,18 @@ class TablaSimbolos:
             self.errores.append(mensaje)
             return None
 
+        # Validamos que, si se especificó tiempo de servicio, sea un valor positivo
+        if tipo == 'OPERATOR' and tiempo_servicio is not None and tiempo_servicio <= 0:
+            mensaje = (f"[ERROR SEMÁNTICO] Línea {linea}: El operador '{nombre}' debe tener un "
+                       f"TIEMPO_SERVICIO mayor a 0 (se especificó: {tiempo_servicio}).")
+            self.errores.append(mensaje)
+            return None
+
         # Creamos la instancia según el tipo de nodo
         if tipo == 'SOURCE':
             nuevo_nodo = SourceNode(nombre, linea)
         elif tipo == 'OPERATOR':
-            nuevo_nodo = OperatorNode(nombre, paralelismo, linea)
+            nuevo_nodo = OperatorNode(nombre, paralelismo, linea, tiempo_servicio=tiempo_servicio)
         elif tipo == 'SINK':
             nuevo_nodo = SinkNode(nombre, linea)
         else:
@@ -369,10 +385,15 @@ class Simulador:
 
         return replica_elegida, puntero_actual
 
-    def propagar_tupla(self, id_tupla, contenido, emisor_id, nombre_nodo_destino, ruta_recorrida):
+    def propagar_tupla(self, id_tupla, contenido, emisor_id, nombre_nodo_destino, ruta_recorrida, tiempo_acumulado=0):
         """
         Función recursiva que hace avanzar una tupla desde un emisor hacia un nodo destino.
         Maneja operadores replicados y sumideros finales.
+
+        'tiempo_acumulado' viaja junto con 'ruta_recorrida' de la misma forma
+        (por valor, en cada llamada recursiva), así que cada rama del recorrido
+        mantiene su propio total sin depender de ningún acumulador global ni
+        compartido entre eventos (Control I: tiempo total acumulado del evento).
         """
         nodo_destino = self.topologia.tabla.obtener(nombre_nodo_destino)
         if not nodo_destino:
@@ -382,13 +403,26 @@ class Simulador:
         if nodo_destino.tipo == 'OPERATOR':
             # Aplicamos Round-Robin independiente para este canal específico
             replica_id, turno = self.obtener_siguiente_replica(emisor_id, nodo_destino)
-            
+
             # Registramos que esta réplica procesó la tupla
             nodo_destino.registrar_procesamiento(replica_id)
-            
+
             # Identificador de esta réplica para sus propios envíos hacia adelante
             id_esta_replica = f"{nodo_destino.nombre}#r{replica_id}"
             nueva_ruta = ruta_recorrida + [f"{nodo_destino.nombre}[replica_{replica_id}]"]
+
+            # Tiempo de servicio (Control I): se suma EXACTAMENTE UNA VEZ por
+            # operador atravesado, sin importar cuál réplica lo procese (todas
+            # las réplicas de un mismo OPERATOR comparten su único
+            # TIEMPO_SERVICIO). Si el operador viene de una declaración legacy
+            # sin TIEMPO_SERVICIO (tiempo_servicio=None), no aporta tiempo al
+            # total -- pero tampoco se intenta sumar None (evita la excepción).
+            if nodo_destino.tiempo_servicio is not None:
+                nuevo_tiempo_acumulado = tiempo_acumulado + nodo_destino.tiempo_servicio
+            else:
+                nuevo_tiempo_acumulado = tiempo_acumulado
+                print(f"    |   -> [ADVERTENCIA] '{nodo_destino.nombre}' no tiene TIEMPO_SERVICIO definido "
+                      f"(sintaxis legacy); no aporta tiempo al total de este evento.")
 
             # Mostramos el paso por consola en estilo de simulación clara
             print(f"    |-- [CANAL] Desde '{emisor_id}' -> '{nodo_destino.nombre}'")
@@ -398,7 +432,7 @@ class Simulador:
             # La réplica reenvía la tupla a todos los nodos siguientes conectados a este operador
             siguientes_nodos = self.topologia.adyacentes.get(nodo_destino.nombre, [])
             for siguiente in siguientes_nodos:
-                self.propagar_tupla(id_tupla, contenido, id_esta_replica, siguiente, nueva_ruta)
+                self.propagar_tupla(id_tupla, contenido, id_esta_replica, siguiente, nueva_ruta, nuevo_tiempo_acumulado)
 
         # CASO 2: El destino es un SINK
         elif nodo_destino.tipo == 'SINK':
@@ -407,12 +441,44 @@ class Simulador:
                 'id_tupla': id_tupla,
                 'contenido': contenido,
                 'origen': ruta_recorrida[0],
-                'ruta_completa': nueva_ruta
+                'ruta_completa': nueva_ruta,
+                'tiempo_total': tiempo_acumulado
             }
             nodo_destino.recibir_tupla(info_final)
             ruta_str = " -> ".join(nueva_ruta)
             print(f"    |-- [SUMIDERO] '{nodo_destino.nombre}' RECIBIO la tupla #{id_tupla}")
             print(f"    |   -> Camino recorrido: {ruta_str}")
+
+            # Formato de salida literal exigido por el Control (Ejemplo de Salida
+            # del enunciado): "Evento N: FUENTE f1 -> OPERADOR op1 (T: 5) -> SUMIDERO s1"
+            # seguido de "Tiempo total acumulado: 5".
+            print(f"    |   -> {self._formatear_linea_evento(id_tupla, nueva_ruta)}")
+            print(f"    |   -> Tiempo total acumulado: {tiempo_acumulado}")
+
+    def _formatear_linea_evento(self, id_tupla, ruta_completa):
+        """
+        Construye la línea con el formato literal del enunciado del Control a
+        partir de la ruta completa de una rama del evento (FUENTE -> ... ->
+        SUMIDERO), consultando el TIEMPO_SERVICIO real de cada operador
+        atravesado en esa ruta.
+        """
+        partes = []
+        ultimo_indice = len(ruta_completa) - 1
+        for indice, paso in enumerate(ruta_completa):
+            if indice == 0:
+                partes.append(f"FUENTE {paso}")
+            elif indice == ultimo_indice:
+                partes.append(f"SUMIDERO {paso}")
+            else:
+                # 'paso' viene como 'nombre[replica_N]'; el TIEMPO_SERVICIO
+                # pertenece al OPERATOR, no a la réplica individual.
+                nombre_operador = paso.split('[')[0]
+                nodo_operador = self.topologia.tabla.obtener(nombre_operador)
+                if nodo_operador and nodo_operador.tiempo_servicio is not None:
+                    partes.append(f"OPERADOR {nombre_operador} (T: {nodo_operador.tiempo_servicio})")
+                else:
+                    partes.append(f"OPERADOR {nombre_operador} (T: sin definir)")
+        return f"Evento {id_tupla}: " + " -> ".join(partes)
 
     def simular(self, lista_emisiones):
         """
