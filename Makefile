@@ -4,8 +4,13 @@
 # ASIGNATURA: Lenguajes y Autómatas / Compiladores
 # ==============================================================================
 
-PYTHON = python
-PIP = pip
+ifeq ($(OS),Windows_NT)
+    PYTHON ?= python
+    PIP ?= pip
+else
+    PYTHON ?= python3
+    PIP ?= pip3
+endif
 
 .PHONY: all run clean install test help
 

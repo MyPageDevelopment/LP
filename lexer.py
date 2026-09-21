@@ -1,155 +1,60 @@
-# ==============================================================================
-# ARCHIVO: lexer.py
-# TAREA SEMESTRAL: Intérprete de Topologías de Stream Processing
-# ASIGNATURA: Lenguajes y Autómatas / Compiladores
-# DESCRIPCIÓN: Analizador léxico implementado con la librería PLY (Python Lex-Yacc).
-#              Se encarga de transformar el código fuente del DSL en un flujo
-#              de tokens legibles por el parser, manejando líneas y errores.
-# ==============================================================================
-
+# =======================================================
+# lexer.py - Analizador Léxico para el DSL (PLY Lex)
+# =======================================================
+# pyrefly: ignore [missing-import]
 import ply.lex as lex
 
-# -----------------------------------------------------------------------------
-# PALABRAS RESERVADAS DEL DSL
-# Definimos un diccionario para no confundir palabras clave con nombres de variables (identificadores).
-# Mapeamos tanto en minúsculas como mayúsculas para que el lenguaje sea flexible y amigable.
-# -----------------------------------------------------------------------------
-palabras_reservadas = {
-    'source': 'SOURCE',
-    'fuente': 'SOURCE',        # palabra OFICIAL del Control para declarar una fuente
-    'operator': 'OPERATOR',
-    'operador': 'OPERATOR',    # palabra OFICIAL del Control para declarar un operador
-    'sink': 'SINK',
-    'sumidero': 'SINK',        # palabra OFICIAL del Control para declarar un sumidero
-    'parallel': 'PARALLEL',
-    'replicas': 'PARALLEL',    # permitimos 'replicas' como sinónimo de 'parallel' (también es la palabra OFICIAL del Control)
-    'connect': 'CONNECT',
-    'conectar': 'CONNECT',     # palabra OFICIAL del Control para declarar una arista
-    'to': 'TO',
-    'a': 'TO',                 # 'A' (Control I, en "CONECTAR ... A ...") reutiliza el mismo token que 'TO'
-    'emit': 'EMIT',
-    'simulate': 'SIMULATE',
-    'simular': 'SIMULATE',     # permitimos 'simular' como sinónimo de 'simulate' (Control I)
-    'tiempo_servicio': 'TIEMPO_SERVICIO',  # atributo de tiempo de procesamiento de un OPERATOR (Control I)
+# Palabras reservadas del DSL
+reservadas = {
+    'fuente': 'FUENTE',
+    'operador': 'OPERADOR',
+    'tiempo_servicio': 'TIEMPO_SERVICIO',
+    'replicas': 'REPLICAS',
+    'sumidero': 'SUMIDERO',
+    'conectar': 'CONECTAR',
+    'a': 'A',
+    'simular': 'SIMULAR'
 }
 
-# -----------------------------------------------------------------------------
-# LISTA DE TOKENS
-# Acá juntamos las palabras reservadas con los símbolos y literales que reconoce el lexer.
-# -----------------------------------------------------------------------------
+# Lista de tokens reconocidos
 tokens = [
-    'IDENT',          # Nombres de fuentes, operadores, sumideros (ej. sensor1, filtro)
-    'STRING',         # Cadenas de texto con comillas para la carga de los eventos
-    'NUMBER',         # Números enteros (ej. cantidad de réplicas en paralelo)
-    'ARROW',          # Flecha de conexión entre nodos (->)
-    'SEMICOLON',      # Punto y coma de fin de instrucción (;)
-    'LBRACKET',       # Corchete izquierdo ([)
-    'RBRACKET',       # Corchete derecho (])
-    'LBRACE',         # Llave izquierda ({)
-    'RBRACE',         # Llave derecha (})
-    'EQUALS',         # Signo igual (=)
-] + list(set(palabras_reservadas.values()))
+    'IDENT',
+    'NUMBER',
+    'SEMICOLON'
+] + list(reservadas.values())
 
-# -----------------------------------------------------------------------------
-# REGLAS CON EXPRESIONES REGULARES SIMPLES
-# Tokens que se reconocen con una sola expresión regular directa sin lógica extra.
-# -----------------------------------------------------------------------------
-t_ARROW     = r'->'
+# Tokens simples
 t_SEMICOLON = r';'
-t_LBRACKET  = r'\['
-t_RBRACKET  = r'\]'
-t_LBRACE    = r'\{'
-t_RBRACE    = r'\}'
-t_EQUALS    = r'='
 
-# Ignoramos espacios en blanco, tabulaciones y retornos de carro
+# Ignoramos espacios y tabulaciones
 t_ignore = ' \t\r'
 
-# -----------------------------------------------------------------------------
-# REGLAS CON FUNCIONES (Para lógica adicional como números de línea y tipos)
-# -----------------------------------------------------------------------------
+# Comentarios de una sola línea: //
+def t_COMMENT(t):
+    r'//.*'
+    pass
 
-def t_STRING(t):
-    r'\"([^\\\n]|(\\.))*?\"'
-    # Le quitamos las comillas al inicio y al final para quedarnos solo con el contenido del mensaje
-    t.value = t.value[1:-1]
+# Reconocer identificadores y palabras reservadas (insensible a mayúsculas/minúsculas)
+def t_IDENT(t):
+    r'[a-zA-Z_][a-zA-Z0-9_]*'
+    t.type = reservadas.get(t.value.lower(), 'IDENT')
     return t
 
+# Reconocer números enteros
 def t_NUMBER(t):
     r'\d+'
-    # Convertimos el texto del número a un entero de Python para usarlo directamente en cálculos
     t.value = int(t.value)
     return t
 
-def t_IDENT(t):
-    r'[a-zA-Z_][a-zA-Z0-9_]*'
-    # Revisamos si el identificador es en verdad una palabra reservada (ej: SOURCE, OPERATOR)
-    # Lo pasamos a minúscula al buscar para que acepte tanto 'source' como 'SOURCE'
-    nombre_minuscula = t.value.lower()
-    if nombre_minuscula in palabras_reservadas:
-        t.type = palabras_reservadas[nombre_minuscula]
-    else:
-        t.type = 'IDENT'
-    return t
-
-# -----------------------------------------------------------------------------
-# MANEJO DE COMENTARIOS
-# Permitimos comentarios de una sola línea con // o con # (estilo C y Python)
-# y comentarios multilínea con /* ... */ para que sea cómodo documentar el DSL.
-# -----------------------------------------------------------------------------
-
-def t_COMMENT_LINE(t):
-    r'(//|\#).*'
-    # No retornamos nada para que el lexer simplemente descarte el comentario
-    pass
-
-def t_COMMENT_BLOCK(t):
-    r'/\*(.|\n)*?\*/'
-    # Si el comentario tiene saltos de línea, sumamos al contador de líneas del lexer
-    saltos = t.value.count('\n')
-    t.lexer.lineno += saltos
-    pass
-
+# Rastrear números de línea
 def t_newline(t):
     r'\n+'
-    # Cada vez que vemos un salto de línea aumentamos el número de línea para dar buenos mensajes de error
     t.lexer.lineno += len(t.value)
 
-# -----------------------------------------------------------------------------
-# MANEJO DE ERRORES LÉXICOS
-# Si el usuario escribe un carácter raro (como @ o $), se avisa en qué línea ocurrió.
-# -----------------------------------------------------------------------------
+# Manejo de caracteres no reconocidos
 def t_error(t):
-    # Imprimimos el error léxico con la línea exacta para que el profe o usuario sepa dónde corregir
-    print(f"[ERROR LÉXICO] Carácter no reconocido '{t.value[0]}' en la línea {t.lineno}")
-    # Saltamos ese carácter para intentar seguir analizando el resto del archivo
+    print(f"[Error Léxico] Carácter inválido '{t.value[0]}' en la línea {t.lineno}")
     t.lexer.skip(1)
 
-# -----------------------------------------------------------------------------
-# FUNCIÓN CONSTRUCTORA DEL ANALIZADOR LÉXICO
-# Retorna una instancia lista de lexer de PLY.
-# -----------------------------------------------------------------------------
 def construir_lexer():
-    """
-    Construye y retorna el analizador léxico de PLY configurado con nuestras reglas.
-    """
     return lex.lex()
-
-# Si ejecutamos este archivo directamente en consola, hacemos una prueba rápida
-if __name__ == '__main__':
-    codigo_prueba = '''
-    // Prueba de tokens
-    SOURCE sensor;
-    OPERATOR filtro PARALLEL 2;
-    SINK bd;
-    sensor -> filtro -> bd;
-    EMIT "dato de prueba" TO sensor;
-    '''
-    analizador = construir_lexer()
-    analizador.input(codigo_prueba)
-    print("--- Probando tokens en lexer.py ---")
-    while True:
-        tok = analizador.token()
-        if not tok:
-            break
-        print(f"Línea {tok.lineno} -> Tipo: {tok.type}, Valor: {repr(tok.value)}")
