@@ -1,7 +1,7 @@
 # ==============================================================================
 # ARCHIVO: Makefile
 # TAREA SEMESTRAL: Intérprete de Topologías de Stream Processing
-# ASIGNATURA: Lenguajes y Autómatas / Compiladores
+# ASIGNATURA: Lenguajes de Programación
 # ==============================================================================
 
 ifeq ($(OS),Windows_NT)
