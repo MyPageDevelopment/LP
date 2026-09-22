@@ -8,24 +8,24 @@ from parser import parsear
 def main():
     print("=" * 80)
     print("   INTÉRPRETE DE TOPOLOGÍAS DE STREAM PROCESSING - CONTROL 1")
-    print("   Asignatura: Lenguajes y Autómatas / Compiladores")
+    print("   Asignatura: Lenguajes de Programación.")
     print("=" * 80)
 
     if len(sys.argv) < 2:
-        print("\nUso: python main.py <archivo.dsl>")
+        print("\nTe falto el archivo jeje")
         print("Ejemplo: python main.py test.dsl\n")
         sys.exit(1)
 
     archivo = sys.argv[1]
     if not os.path.isfile(archivo):
-        print(f"\n[Error] El archivo '{archivo}' no existe.")
+        print(f"\n[Erroooor], te equivocaste en el nombre o no existe we :D, '{archivo}' no existe :C SAD.")
         sys.exit(1)
 
     print(f"[*] Leyendo archivo fuente: {archivo} ...")
     with open(archivo, 'r', encoding='utf-8') as f:
         codigo = f.read()
 
-    print("[*] Ejecutando análisis léxico y sintáctico...")
+    print("[*] Ejecutando análisis léxico y sintáctico..., espere un momentito")
     topologia, errores_sintacticos = parsear(codigo)
 
     if errores_sintacticos:

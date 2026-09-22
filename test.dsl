@@ -9,7 +9,7 @@
 FUENTE sensor_iot;
 
 // Primer operador replicado: 2 réplicas y 4 unidades de tiempo de servicio
-OPERADOR filtro_ruido TIEMPO_SERVICIO 4 REPLICAS 2;
+OPERADOR filtro_ruido TIEMPO_SERVICIO 4 REPLICAS 9;
 
 // Segundo operador replicado adyacente: 3 réplicas y 6 unidades de tiempo de servicio
 OPERADOR detector_anomalias TIEMPO_SERVICIO 6 REPLICAS 3;
@@ -24,4 +24,4 @@ CONECTAR detector_anomalias A consola_alertas;
 
 // 3. Simulación de Eventos
 // Genera 6 eventos para observar el balanceo Round-Robin en las réplicas
-SIMULAR 6;
+SIMULAR 28;

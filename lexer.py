@@ -53,7 +53,7 @@ def t_newline(t):
 
 # Manejo de caracteres no reconocidos
 def t_error(t):
-    print(f"[Error Léxico] Carácter inválido '{t.value[0]}' en la línea {t.lineno}")
+    print(f"[Errooooooooor Léxico] Carácter inválido '{t.value[0]}' en la línea {t.lineno}, revise su archivo dsl")
     t.lexer.skip(1)
 
 def construir_lexer():

@@ -1,8 +1,8 @@
 ================================================================================
   TAREA SEMESTRAL: INTÉRPRETE DE TOPOLOGÍAS DE STREAM PROCESSING
-  Asignatura : Lenguajes y Autómatas / Compiladores
-  Grupo      : Grupo [COMPLETAR NUMERO]
-  Integrantes: [COMPLETAR NOMBRES DE INTEGRANTES]
+  Asignatura : Lenguajes de Programación
+  Grupo      : Grupo 9 
+  Integrantes: Maria José Baxmann, Daniel Belozo, Renata Orozco
 ================================================================================
 
 1. DESCRIPCIÓN GENERAL

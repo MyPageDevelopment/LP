@@ -76,9 +76,9 @@ def p_empty(p):
 # Manejo de errores sintácticos
 def p_error(p):
     if p:
-        msg = f"[Error Sintáctico] Token inesperado '{p.value}' en la línea {p.lineno}"
+        msg = f"[Error Sintáctico] Token no válido '{p.value}' en la línea {p.lineno}, revisar bien el archivo :C"
     else:
-        msg = "[Error Sintáctico] Fin de archivo inesperado"
+        msg = "[Error Sintáctico] Fin de archivo inesperado, revisar bien el archivo :C"
     errores_sintacticos.append(msg)
     print(msg)
 
